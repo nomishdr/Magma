@@ -1,5 +1,5 @@
 # Magma
-PHP Based database
+Easy, fast, power !
 
 # Description
 
