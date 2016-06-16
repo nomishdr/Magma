@@ -31,10 +31,10 @@ $Magma->insert(
 	//...
 );
 $result = $Magma->fetch(); //Fetch with no conditions
-$result = $Magma->fetch(["firstname"=>"Firstname1"]); //Find all firstname equaled too "Firstname1"
-$result = $Magma->fetch(["firstname"=>"Firstname1"], ["LIMIT"=>1]); //Find the first firstname equaled too "Firstname1"
+$result = $Magma->fetch(["firstname"=>"Firstname1"]); //Find all firstname equaled to "Firstname1"
+$result = $Magma->fetch(["firstname"=>"Firstname1"], ["LIMIT"=>1]); //Find the first firstname equaled to "Firstname1"
 
-$Magma->update(["firstname"=>"New firstname ! :D"], ["id"=>3]); //Find id=3 and replace his firstname with the associate value
+$Magma->update(["firstname"=>"New firstname ! :D"], ["id"=>3]); //Find id=3 and replace its firstname with the associate value
 
 $Magma->delete(["id"=>1]); //Delete record where id=1
 ?>
