@@ -12,19 +12,59 @@ GNU Lesser General Public License for more details.
 You should have received a copy of the GNU Lesser General Public License
 along with Magma. If not, see <http://www.gnu.org/licenses/>.
 **************************************************************************/
-namespace Magma;
+
+namespace Inxk;
 
 define("DS", DIRECTORY_SEPARATOR);
 
 class Magma{
 
 	private $db 	  = null;
+	private $dir      = null;
 	private $table 	  = null;
-	public  $autouse  = false;
-	public  $debug    = false;
 	private $fatal    = false;
 	private $types    = ["INT","DATE","TIMESTAMP","TEXT","FLOAT"];
+	private $log      = false;
+	public  $autouse  = false;
+	public  $debug    = false;
 
+
+	/**
+	 * Register string with OK or FAIL depend of $bool
+	 * @param bool 
+	 */
+
+	private function log($bool){
+
+		if(!$this->log)
+			return false;
+
+		if($this->dir){
+			$log = $this->dir."logs";
+			if(!is_dir($log))
+				mkdir($log, 0777);
+		}
+
+		$date = date("Y/m/d H:i:s");
+
+		if($bool==true)
+			$marker = "OK";
+		else
+			$marker = "FAIL";
+
+		$debug = debug_backtrace();
+
+		$debug = $debug[count($debug)-1];
+
+		$args = json_encode($debug["args"]);
+
+		$string = $debug["class"].'::'.$debug["function"].'('.$args.')';
+
+		$format = "[$date] {{$marker}} $string\r\n";
+
+		file_put_contents($log.DS.'magma.log', $format, FILE_APPEND);
+
+	}
 
 	/**
 	 * Make HTML Format errors
@@ -107,7 +147,7 @@ class Magma{
 
 		$data = gzcompress(json_encode($data));
 
-		if(file_put_contents($this->db.DS.$this->table, $data, LOCK_EX)){
+		if(file_put_contents($this->dir.$this->db.DS.$this->table, $data, LOCK_EX)){
 			return true;
 		}
 		return false;
@@ -115,7 +155,7 @@ class Magma{
 
 	private function read(){
 
-		$filename = $this->db.DS.$this->table;
+		$filename = $this->dir.$this->db.DS.$this->table;
 		return json_decode(gzuncompress(file_get_contents($filename)));
 	}
 
@@ -202,7 +242,13 @@ class Magma{
 
 		if(!empty($vars) && is_array($vars)){
 			foreach($vars as $k=>$v){
-				$this->$k = $v;
+				if($this->$k==null){
+					if($k=="dir"){
+						$v = trim($v, DS).DS;
+					}
+					$this->$k = $v;
+				}
+				continue;
 			}
 			return true;
 		}
@@ -385,6 +431,29 @@ class Magma{
 			}
 		}
 
+
+		if(isset($options["FIELDS"]) && is_array($options["FIELDS"]) && empty($conditions)){
+			$alternate = [];
+			foreach($content->DATA as $i=>$v){
+				if(isset($offset) && isset($limit)){
+					if($i>$offset+$limit-1){
+						break;
+					}
+				}
+
+				foreach($v as $k=>$w){
+					if(in_array($k, $options["FIELDS"])){
+						if(!isset($alternate[$i])){
+							$alternate[$i] = new \stdClass();
+						}
+						$alternate[$i]->$k = $v->$k;
+					}else{
+						continue;
+					}
+				}
+			}		
+		}
+
 		if(!empty($conditions)){
 			foreach($content->DATA as $i=>$v){
 				if(isset($offset) && isset($limit)){
@@ -394,10 +463,19 @@ class Magma{
 				}
 
 				foreach($v as $k=>$w){
-					if(isset($conditions[$k])){
+					if(isset($conditions[$k]) && !empty($options["FIELDS"])){
 						foreach($conditions as $col=>$val){
 							if($val==$w){
-								$alternate[] = $v;
+								foreach($v as $column=>$value){
+									if(in_array($column, $options["FIELDS"])){
+										if(!isset($alternate[$i])){
+											$alternate[$i] = new \stdClass();
+										}
+										$alternate[$i]->$column = $v->$column;
+									}else{
+										continue;
+									}	
+								}
 							}
 						}
 						break;
@@ -409,19 +487,33 @@ class Magma{
 		}
 
 		if(isset($options["LIMIT"])){
-			foreach($content->DATA as $k=>$v){
+			if(!isset($alternate)){
+				foreach($content->DATA as $k=>$v){
 
-				if($k<=$offset-1){
-					continue;
-				}
+					if($k<=$offset-1){
+						continue;
+					}
 
-				if($k>$offset+$limit-1){
-					break;
-				}else{
-					$alternate[$k] = $v;
+					if($k>$offset+$limit-1){
+						break;
+					}else{
+						$alternate[$k] = $v;
+					}
 				}
+			}else{
+				foreach($alternate as $k=>$v){
+
+					if($k<=$offset-1){
+						continue;
+					}
+
+					if($k>$offset+$limit-1){
+						break;
+					}else{
+						$alternate[$k] = $v;
+					}
+				}			
 			}
-
 		}
 
 		if(isset($options["ORDER"]) && is_array($options["ORDER"])){
@@ -432,12 +524,31 @@ class Magma{
 			}
 		}
 
+		$this->log(true);
+
 		if(!isset($alternate)){
+			if(count($content->DATA)===1){
+				return current($content->DATA);
+			}
 			return $content->DATA;
 		}else{
+			if(count($alternate)===1){
+				return current($alternate);
+			}
 			return $alternate;
 		}
 
+	}
+
+	/**
+	 * Return the first occurence find
+	 * @param array $conditions
+	 * @return object
+	 */
+
+	public function find($conditions=[], $options=[]){
+		$options["LIMIT"] = 1;
+		return current($this->fetch($conditions, $options));
 	}
 
 	/**
@@ -615,5 +726,105 @@ class Magma{
 		return false;
 
 	}
+
+	/**
+	 * Parse a SQL query
+	 * @param  string $query
+	 * @return object
+	 */
+
+	public function query($query){
+
+		if($this->fatal){
+			return false;
+		}
+
+		$methods = [
+			"fetch"  => "SELECT",
+			"insert" => "INSERT",
+			"update" => "UPDATE",
+			"delete" => "DELETE"
+		];
+
+		$args = explode(' ', $query);
+
+		if(!in_array($args[0], $methods)){
+			$this->exception(["TYPE"=>"FATAL", "MSG"=>"<b>[SQL]</b> Syntax error, unexpected <i><b>$args[0]</b></i>"]);
+			return false;	
+		}
+
+		$options = [];
+		$conditions = [];
+
+		/*=====================================================================
+										SELECT
+		======================================================================*/
+
+		if($args[0]=="SELECT"){
+			if($args[1]!='*'){
+				$options["FIELDS"] = explode(',', $args[1]);
+			}
+
+			if(in_array("WHERE", $args)){
+
+				$cond = strstr($query, "WHERE");
+
+				if(preg_match_all('/([A-z0-9-_]+)=([A-z0-9-_]+)/', $cond, $matches)){
+					array_shift($matches);
+					foreach($matches[0] as $k=>$v){
+						$conditions[$v] = $matches[1][$k];
+					}
+				}else{
+					$this->exception(["TYPE"=>"FATAL", "MSG"=>"<b>[SQL]</b> Syntax error, invalid query <b><i>$query</i></b>"]);
+					return false;
+				}
+			}
+
+			if(in_array("LIMIT", $args)){
+
+				$limit = strstr($query, "LIMIT");
+
+				if(preg_match_all('/LIMIT ([0-9]+)|,([0-9]+)/', $limit, $matches)){
+					array_shift($matches);
+					if(empty($matches[1][1])){
+						$options["LIMIT"] = $matches[0][0];
+					}else{
+						$options["LIMIT"] = $matches[0][0].','.$matches[1][1];
+					}
+				}else{
+					$this->exception(["TYPE"=>"FATAL", "MSG"=>"<b>[SQL]</b> Syntax error, invalid query <b><i>$query</i></b>"]);
+					return false;
+				}
+			}
+
+			if(in_array("ORDER", $args) && in_array("BY", $args)){
+				$order = strstr($query, "ORDER BY");
+
+				if(preg_match_all('/ORDER BY ([A-z0-9-_]+) (ASC|DESC)/', $order, $matches)){
+					array_shift($matches);
+					$options["ORDER"][$matches[0][0]] = $matches[1][0];
+				}else{
+					$this->exception(["TYPE"=>"FATAL", "MSG"=>"<b>[SQL]</b> Syntax error, invalid query <b><i>$query</i></b>"]);
+					return false;
+				}
+			}
+
+			$this->load($args[3]);
+			return $this->fetch($conditions, $options);
+		}
+
+		/*=====================================================================
+										INSERT
+		======================================================================*/
+
+		elseif($args[0]=="INSERT"){
+
+			$this->load($args[2]);
+
+
+			return $this->insert($conditions, $options);
+		}
+	}
+
 }
 ?>
