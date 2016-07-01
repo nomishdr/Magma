@@ -1,6 +1,6 @@
 <?php
 /**************************************************************************
-						This file is part of Magma.
+This file is part of Magma.
 Magma is free software: you can redistribute it and/or modify
 it under the terms of the GNU Lesser General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
@@ -30,11 +30,11 @@ class Magma{
 
 
 	/**
-	 * Register string with OK or FAIL depend of $bool
-	 * @param bool 
+	 * Register string with OK or FAIL depend of $error
+	 * @param error 
 	 */
 
-	private function log($bool){
+	private function log($error, $string=null){
 
 		if(!$this->log)
 			return false;
@@ -47,7 +47,7 @@ class Magma{
 
 		$date = date("Y/m/d H:i:s");
 
-		if($bool==true)
+		if($error==true)
 			$marker = "OK";
 		else
 			$marker = "FAIL";
@@ -58,12 +58,17 @@ class Magma{
 
 		$args = json_encode($debug["args"]);
 
-		$string = $debug["class"].'::'.$debug["function"].'('.$args.')';
+		if($string){
+			$string = $string;
+		}else{
+			$string = $debug["class"].'::'.$debug["function"].'('.$args.')';	
+		}
+		
 
 		$format = "[$date] {{$marker}} $string\r\n";
 
-		file_put_contents($log.DS.'magma.log', $format, FILE_APPEND);
 
+		file_put_contents($log.DS.'magma.log', $format, FILE_APPEND);
 	}
 
 	/**
@@ -96,6 +101,9 @@ class Magma{
 	 */
 
 	private function exception($e){
+
+		$this->log(true, $e["MSG"]);
+
 		if($this->debug==true){
 
 			if($e["TYPE"]=="FATAL"){
@@ -126,8 +134,7 @@ class Magma{
 			}	
 		}
 
-
-		if(isset($content->DATA)){
+		if(isset($content->DATA) && !empty($content->DATA)){
 			$content->DATA = array_merge($content->DATA, $data);
 		}else{
 			$content->DATA = $data;
@@ -233,6 +240,20 @@ class Magma{
 	}
 
 	/**
+	 * Emulate new & use
+	 */
+
+	public function __call($method, $args){
+		if($method === 'new') {
+			return call_user_func_array(array($this, '_new'), $args);
+		}elseif($method === 'use'){
+			return call_user_func_array(array($this, '_use'), $args);
+		}else{
+			throw new LogicException('Unknown method');
+		}
+	}
+
+	/**
 	 * Constructor init config vars
 	 * @param array $vars
 	 * @return true
@@ -261,9 +282,14 @@ class Magma{
 	 * @return true
 	 */	
 
-	public function new($dbname){
+	public function _new($dbname=null){
 
 		if($this->fatal){
+			return false;
+		}
+
+		if(!$dbname){
+			$this->exception(["TYPE"=>"FATAL", "MSG"=>"Missing argument \$dbname"]);
 			return false;
 		}
 
@@ -274,9 +300,9 @@ class Magma{
 			}
 			return true;
 		}
+		$this->exception(["TYPE"=>"FATAL", "MSG"=>"The database {$dbname} already exists"]);
 		return false;
 	}
-
 
 	/**
 	 * Load the database folder
@@ -284,7 +310,7 @@ class Magma{
 	 * @return true
 	 */
 
-	public function use($dbname){
+	public function _use($dbname){
 
 		if($this->fatal){
 			return false;
@@ -679,7 +705,12 @@ class Magma{
 						continue;
 					}
 				}
-			}			
+			}
+
+			if(empty($struct->DATA)){
+				$this->exception(["TYPE"=>"WARNING", "MSG"=>"The table {$this->table} is empty"]);
+				return false;
+			}		
 		}
 
 		if($this->write($struct)){
@@ -701,12 +732,20 @@ class Magma{
 			return false;
 		}
 
+		$struct = $this->getStruct();
+
 		if(empty($conditions)){
-			$this->exception(["TYPE"=>"NOTICE", "MSG"=>"Nothing to delete, missing argument 1"]);
-			return false;			
+			$struct->DATA = [];
+			if($this->write($struct)){
+				return true;
+			}
+			return false;
 		}
 
-		$struct = $this->getStruct();
+		if(empty($struct->DATA)){
+			$this->exception(["TYPE"=>"WARNING", "MSG"=>"The table {$this->table} is empty"]);
+			return false;
+		}
 
 		foreach($struct->DATA as $k=>$v){
 			foreach($v as $col=>$val){
@@ -819,10 +858,114 @@ class Magma{
 
 		elseif($args[0]=="INSERT"){
 
+			if(preg_match('/VALUES ?\((.*)\)/', $query, $match)){
+				$rows = explode(", ", $match[1]);
+
+				foreach($rows as $k=>$v){
+					if($v==trim($v, '\'')){
+						if($v==trim($v, '"')){
+							$rows[$k] = trim($v, '"');
+							continue;
+						}else{
+							continue;
+						}
+					}else{
+						$rows[$k] = trim($v, '\'');
+					}
+				}
+			}
+
 			$this->load($args[2]);
 
+			return $this->insert($rows);
+		}
 
-			return $this->insert($conditions, $options);
+		/*=====================================================================
+										UPDATE
+		======================================================================*/
+
+		elseif($args[0]=="UPDATE"){
+			
+			/**
+			 * Parse SET
+			 */
+
+			if(preg_match('/SET ?\((.*)\)/', $query, $lines)){
+
+				$lines = explode(', ', $lines[1]);
+
+				foreach($lines as $v){
+					$explode = explode('=', $v);
+					
+					if($explode[0]==trim($explode[0], '\'')){
+						if($explode[0]==trim($explode[0], '"')){
+							$explode[0] = trim($explode[0], '"');
+						}
+					}else{
+						$explode[0] = trim($explode[0], '\'');
+					}					
+
+					if($explode[1]==trim($explode[1], '\'')){
+						if($explode[1]==trim($explode[1], '"')){
+							$explode[1] = trim($explode[1], '"');
+						}
+					}else{
+						$explode[1] = trim($explode[1], '\'');
+					}
+
+					$rows[$explode[0]] = $explode[1];
+
+				}
+			}
+
+			$conditions = [];
+
+			if(in_array("WHERE", $args)){
+
+				$cond = strstr($query, "WHERE");
+
+				if(preg_match_all('/([A-z0-9-_]+)=([A-z0-9-_]+)/', $cond, $matches)){
+					array_shift($matches);
+					foreach($matches[0] as $k=>$v){
+						$conditions[$v] = $matches[1][$k];
+					}
+				}else{
+					$this->exception(["TYPE"=>"FATAL", "MSG"=>"<b>[SQL]</b> Syntax error, invalid query <b><i>$query</i></b>"]);
+					return false;
+				}
+			}
+
+			$this->load($args[1]);
+
+			return $this->update($rows, $conditions);			
+		}
+
+		/*=====================================================================
+										DELETE
+		======================================================================*/
+
+		elseif($args[0]=="DELETE"){
+			
+			$conditions = [];
+
+			if(in_array("WHERE", $args)){
+
+				$cond = strstr($query, "WHERE");
+
+				if(preg_match_all('/([A-z0-9-_]+)=([A-z0-9-_]+)/', $cond, $matches)){
+					array_shift($matches);
+					foreach($matches[0] as $k=>$v){
+						$conditions[$v] = $matches[1][$k];
+					}
+				}else{
+					$this->exception(["TYPE"=>"FATAL", "MSG"=>"<b>[SQL]</b> Syntax error, invalid query <b><i>$query</i></b>"]);
+					return false;
+				}
+			}
+
+			$this->load($args[2]);
+
+			//return $this->delete($conditions);			
 		}
 	}
 
