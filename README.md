@@ -16,7 +16,7 @@ The fasted way is to require the class, create a new Magma object and let's work
 <?php
 require 'class.magma.php';
 
-$Magma = new Magma\Magma();
+$Magma = new Inxk\Magma();
 $Magma->debug = true;
 
 $Magma->new("MyDB");
