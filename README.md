@@ -12,10 +12,16 @@ This is the big point.I always upgrade the script for you get the best experienc
 # Examples
 The fasted way is to require the class, create a new Magma object and let's work with it !
 
-```php
-<?php
-require 'class.magma.php';
+##Via composer
+`composer require inxk/magma dev-master`
 
+##Manualy
+Require the class in your project
+```php
+require 'class.magma.php';
+```
+
+```php
 $Magma = new Inxk\Magma();
 $Magma->debug = true;
 
