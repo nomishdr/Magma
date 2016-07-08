@@ -12,7 +12,6 @@ GNU Lesser General Public License for more details.
 You should have received a copy of the GNU Lesser General Public License
 along with Magma. If not, see <http://www.gnu.org/licenses/>.
 **************************************************************************/
-
 namespace Inxk;
 
 define("DS", DIRECTORY_SEPARATOR);
@@ -31,9 +30,10 @@ class Magma{
 
 	/**
 	 * Register string with OK or FAIL depend of $error
-	 * @param error 
+	 * @param (bool) $error 
+	 * @param (string) $string
+	 * @return (bool)
 	 */
-
 	private function log($error, $string=null){
 
 		if(!$this->log)
@@ -56,27 +56,24 @@ class Magma{
 
 		$debug = $debug[count($debug)-1];
 
-		$args = json_encode($debug["args"]);
+		$args = json_encode($debug["args"], JSON_NUMERIC_CHECK);
 
 		if($string){
 			$string = $string;
 		}else{
 			$string = $debug["class"].'::'.$debug["function"].'('.$args.')';	
 		}
-		
 
 		$format = "[$date] {{$marker}} $string\r\n";
 
-
-		file_put_contents($log.DS.'magma.log', $format, FILE_APPEND);
+		return file_put_contents($log.DS.'magma.log', $format, FILE_APPEND);
 	}
 
 	/**
 	 * Make HTML Format errors
-	 * @param array $e
-	 * @return string 
+	 * @param (array) $e
+	 * @return (string) 
 	 */
-
 	private function html_errors($e){
 		if($e["TYPE"]=="FATAL"){
 			$css = "padding:4px;font-family: Arial;background-color: #F00;";
@@ -95,11 +92,10 @@ class Magma{
 	}
 
 	/**
-	 * Manage exceptions errors
-	 * @param array $e
-	 * @return boolean true if an exception occured 
+	 * Manage exceptions errors (This don't generate trigger())
+	 * @param (array) $e
+	 * @return (bool)
 	 */
-
 	private function exception($e){
 
 		$this->log(true, $e["MSG"]);
@@ -117,9 +113,11 @@ class Magma{
 	}
 
 	/**
-	 * Append
+	 * Append data and vars to the current table file
+	 * @param (array) $data
+	 * @param (array) $vars
+	 * @return (bool)
 	 */
-
 	private function append($data, $vars=[]){
 
 		if($this->read()){
@@ -135,43 +133,48 @@ class Magma{
 		}
 
 		if(isset($content->DATA) && !empty($content->DATA)){
-			$content->DATA = array_merge($content->DATA, $data);
+			$content->DATA = array_merge((array) $content->DATA, $data);
 		}else{
 			$content->DATA = $data;
 		}
 
-		$this->write($content);
-
+		return $this->write($content);
 	}
 
 	/**
 	 * Write data into table file
-	 * @param text $data
-	 * @return true
+	 * @param (string) $data
+	 * @return (bool)
 	 */
-
 	private function write($data){
 
-		$data = gzcompress(json_encode($data));
+		if(isset($data->DATA))
+			$data->TOTAL = count($data->DATA);
 
-		if(file_put_contents($this->dir.$this->db.DS.$this->table, $data, LOCK_EX)){
+		$data = json_encode($data, JSON_NUMERIC_CHECK);
+
+		if(file_put_contents($this->dir.$this->db.DS.$this->table.'.table', $data, LOCK_EX)){
 			return true;
 		}
+
 		return false;
 	}
 
 	private function read(){
 
-		$filename = $this->dir.$this->db.DS.$this->table;
-		return json_decode(gzuncompress(file_get_contents($filename)));
+		$filename = $this->dir.$this->db.DS.$this->table.'.table';
+
+		if(!file_exists($filename))
+			return $this->exception(["TYPE"=>"FATAL", "MSG"=>"Table {$this->table} don't exist"]);
+		
+		return json_decode(file_get_contents($filename));
 	}
 
 
 	/**
 	 * Get structure of a table
-	 * @return object
+	 * @return (object)
 	 */
-
 	private function getStruct(){
 
 		$content = $this->read();
@@ -193,11 +196,10 @@ class Magma{
 
 	/**
 	 * Sort $data by $sort (column=>order)
-	 * @param $data(array)		Data
-	 * @param $sort(array)		Order (ASC or DESC) by the column ("id"=>"DESC") will be (5,4,3,2,1)
-	 * @return $data(array)		Return $data ordered by $sort, if $sort = NULL, $data is equaled to the return
+	 * @param (array) $data		Data
+	 * @param (array) $sort		Order (ASC or DESC) by the column ("id"=>"DESC") will be (5,4,3,2,1)
+	 * @return (array) Return $data ordered by $sort, if $sort = NULL, $data is equaled to the return
 	 */
-
 	private function sortBy($data, $sort=NULL){
 
 		$total = count($data);
@@ -240,9 +242,22 @@ class Magma{
 	}
 
 	/**
-	 * Emulate new & use
+	 * Drop (TABLE OR DATABASE)
+	 * @return (bool)
 	 */
+	private function drop($type="TABLE", $name=null){
 
+		if($type=="TABLE"){
+			$table = ($name) ? $name : $this->table;
+			$filename = $this->dir.$this->db.DS.$table.'.table';
+			return unlink($filename);
+		}
+		return false;
+	}
+
+	/**
+	 * Emulate fonctions can't be named because of main function name (Support for PHP <= 5.5)
+	 */
 	public function __call($method, $args){
 		if($method === 'new') {
 			return call_user_func_array(array($this, '_new'), $args);
@@ -255,10 +270,9 @@ class Magma{
 
 	/**
 	 * Constructor init config vars
-	 * @param array $vars
-	 * @return true
+	 * @param (array) $vars
+	 * @return (bool)
 	 */
-
 	public function __construct($vars=[]){
 
 		if(!empty($vars) && is_array($vars)){
@@ -278,8 +292,8 @@ class Magma{
 
 	/**
 	 * Create new database (folder)
-	 * @param   string $dbname
-	 * @return true
+	 * @param   (string) $dbname
+	 * @return (bool)
 	 */	
 
 	public function _new($dbname=null){
@@ -306,10 +320,9 @@ class Magma{
 
 	/**
 	 * Load the database folder
-	 * @param   string $dbname
-	 * @return true
+	 * @param   (string) $dbname
+	 * @return (bool)
 	 */
-
 	public function _use($dbname){
 
 		if($this->fatal){
@@ -325,17 +338,16 @@ class Magma{
 
 	/**
 	 * Load the table file
-	 * @param   string $table
-	 * @return true
+	 * @param   (string) $table
+	 * @return (bool)
 	 */
-
 	public function load($table){
 
 		if($this->fatal){
 			return false;
 		}
 
-		if(is_file($this->db.DS.$table)){
+		if(is_file($this->db.DS.$table.'.table')){
 			$this->table = $table;
 			return true;
 		}
@@ -345,11 +357,10 @@ class Magma{
 
 	/**
 	 * Create table with structure
-	 * @param  string $name
-	 * @param  array $structure
-	 * @return true
+	 * @param  (string) $name
+	 * @param  (array) $structure
+	 * @return (bool)
 	 */
-
 	public function create($name, $structure){
 
 		if($this->fatal){
@@ -358,7 +369,7 @@ class Magma{
 
 		if(isset($this->db)){
 
-			$filename = $this->db.DS.$name;
+			$filename = $this->db.DS.$name.'.table';
 
 			if(!file_exists($filename)){
 
@@ -418,11 +429,10 @@ class Magma{
 
 	/**
 	 * Fetch data with matching $conditions
-	 * @param  array $conditions
-	 * @param  array $options
-	 * @return object
+	 * @param  (array) $conditions
+	 * @param  (array) $options
+	 * @return (object)
 	 */
-
 	public function fetch($conditions=[], $options=[]){
 
 		if($this->fatal){
@@ -440,6 +450,9 @@ class Magma{
 		}
 
 		$content = $this->read();
+
+		if(isset($content->DATA))
+			$content->DATA = (array) $content->DATA;
 
 		if(!isset($content->DATA)){
 			$this->exception(["TYPE"=>"FATAL", "MSG"=>"The table {$this->table} is empty"]);
@@ -554,12 +567,12 @@ class Magma{
 
 		if(!isset($alternate)){
 			if(count($content->DATA)===1){
-				return current($content->DATA);
+				return $content->DATA;
 			}
 			return $content->DATA;
 		}else{
 			if(count($alternate)===1){
-				return current($alternate);
+				return $alternate;
 			}
 			return $alternate;
 		}
@@ -568,10 +581,9 @@ class Magma{
 
 	/**
 	 * Return the first occurence find
-	 * @param array $conditions
-	 * @return object
+	 * @param (array) $conditions
+	 * @return (object)
 	 */
-
 	public function find($conditions=[], $options=[]){
 		$options["LIMIT"] = 1;
 		return current($this->fetch($conditions, $options));
@@ -579,10 +591,9 @@ class Magma{
 
 	/**
 	 * Insert data into table
-	 * @param  array $data
-	 * @return true
+	 * @param  (array) $data
+	 * @return (bool)
 	 */
-
 	public function insert(){
 
 		if($this->fatal){
@@ -615,6 +626,11 @@ class Magma{
 
 		foreach($datas as $data){
 			foreach($data as $k=>$v){
+				if(!isset($data2[$key]))
+					$data2[$key] = new \stdClass;
+
+				$col = $columns[$k]->NAME;
+
 				/**
 				 * DATA PROCESS HERE
 				 */
@@ -624,7 +640,7 @@ class Magma{
 						return false;
 					}else{
 						if($columns[$k]->TYPE=="INT" && empty($v) && isset($columns[$k]->AUTO_INCREMENT)){
-							$data2[$key][$columns[$k]->NAME] = $struct->VARS->AUTO_INCREMENT;
+							$data2[$key]->$col = $struct->VARS->AUTO_INCREMENT;
 						}else{
 							$this->exception(["TYPE"=>"FATAL", "MSG"=>"Unexpected null value"]);
 							return false;								
@@ -636,18 +652,17 @@ class Magma{
 						return false;
 					}						
 				}elseif($columns[$k]->TYPE=="DATE" && !empty($v)){
-					$data2[$key][$columns[$k]->NAME] = date($v);
+					$data2[$key]->$col = date($v);
 				}elseif($columns[$k]->TYPE=="DATE" && empty($v)){
-					$data2[$key][$columns[$k]->NAME] = date("Y-m-d");
+					$data2[$key]->$col = date("Y-m-d");
 				}else{
-					$data2[$key][$columns[$k]->NAME] = $v;
+					$data2[$key]->$col = $v;
 				}
 			}
 
 			if(isset($struct->VARS->AUTO_INCREMENT)){
 				$struct->VARS->AUTO_INCREMENT++;
 			}
-
 			$key++;
 		}
 
@@ -662,11 +677,10 @@ class Magma{
 
 	/**
 	 * Update data into table
-	 * @param  array $data
-	 * @param  array $conditions
-	 * @return true
+	 * @param  (array) $data
+	 * @param  (array) $conditions
+	 * @return (bool)
 	 */
-
 	public function update($data = [], $conditions = []){
 
 		if($this->fatal){
@@ -692,6 +706,9 @@ class Magma{
 				}
 			}
 		}else{
+			if(!isset($struct->DATA))
+				return false;
+
 			foreach($struct->DATA as $k=>$v){
 				foreach($v as $col=>$val){
 					if(isset($conditions[$col])){
@@ -720,12 +737,10 @@ class Magma{
 	}
 
 	/**
-	 * Update data into table
-	 * @param  array $data
-	 * @param  array $conditions
-	 * @return true
+	 * Delete data into table
+	 * @param  (array) $conditions
+	 * @return (bool)
 	 */
-
 	public function delete($conditions = []){
 
 		if($this->fatal){
@@ -742,36 +757,43 @@ class Magma{
 			return false;
 		}
 
-		if(empty($struct->DATA)){
+		if(empty($struct->DATA) && !empty($conditions)){
 			$this->exception(["TYPE"=>"WARNING", "MSG"=>"The table {$this->table} is empty"]);
-			return false;
+			$struct->DATA = [];
 		}
 
+		$data = [];
+
 		foreach($struct->DATA as $k=>$v){
-			foreach($v as $col=>$val){
-				if(isset($conditions[$col])){
-					if($conditions[$col]==$struct->DATA[$k]->$col){
-						unset($struct->DATA[$k]);
-						break;
-					}
+			foreach($conditions as $col=>$value){
+				if($value!=$v->$col){
+					$modified = true;
+					$data[] = $v;
+					continue;
 				}else{
 					continue;
 				}
 			}
 		}
+
+		if(!$modified)
+			return true;
+
+		$struct->DATA = $data;
+
+		$struct->TOTAL = count($data);
+
 		if($this->write($struct)){
 			return true;
 		}
 		return false;
-
 	}
 
 	/**
-	 * Parse a SQL query
-	 * @param  string $query
-	 * @return object
+	 * Parse SQL query
+	 * @param  (string) $query
+	 * @return (object)
 	 */
-
 	public function query($query){
 
 		if($this->fatal){
@@ -798,7 +820,6 @@ class Magma{
 		/*=====================================================================
 										SELECT
 		======================================================================*/
-
 		if($args[0]=="SELECT"){
 			if($args[1]!='*'){
 				$options["FIELDS"] = explode(',', $args[1]);
@@ -855,9 +876,11 @@ class Magma{
 		/*=====================================================================
 										INSERT
 		======================================================================*/
-
 		elseif($args[0]=="INSERT"){
 
+			/**
+			 * Parse INSERT
+			 */
 			if(preg_match('/VALUES ?\((.*)\)/', $query, $match)){
 				$rows = explode(", ", $match[1]);
 
@@ -883,13 +906,11 @@ class Magma{
 		/*=====================================================================
 										UPDATE
 		======================================================================*/
-
 		elseif($args[0]=="UPDATE"){
 			
 			/**
-			 * Parse SET
+			 * Parse UPDATE
 			 */
-
 			if(preg_match('/SET ?\((.*)\)/', $query, $lines)){
 
 				$lines = explode(', ', $lines[1]);
@@ -943,7 +964,6 @@ class Magma{
 		/*=====================================================================
 										DELETE
 		======================================================================*/
-
 		elseif($args[0]=="DELETE"){
 			
 			$conditions = [];
@@ -965,8 +985,54 @@ class Magma{
 
 			$this->load($args[2]);
 
-			//return $this->delete($conditions);			
+			return $this->delete($conditions);			
 		}
+	}
+
+	/**
+	 * Drop table (erase table file)
+	 * @param (string) $table The table to drop (default=current table($this->table))
+	 * @return (bool)
+	 */
+	public function dropTable($table=null){
+		if($this->fatal){
+			return false;
+		}
+
+		if(!isset($this->table)){
+			$this->exception(["TYPE"=>"FATAL", "MSG"=>"No table selected"]);
+			return false;
+		}
+
+		return $this->drop("TABLE", $table);
+	}
+
+	/**
+	 * Count rows into current table
+	 * @param (array) $conditions Conditions to match
+	 * @param (array) $options Options
+	 * @return (int) 
+	 */
+	public function count($conditions = [], $options = []){
+
+		if($this->fatal){
+			return false;
+		}
+
+		if(!isset($this->table)){
+			$this->exception(["TYPE"=>"FATAL", "MSG"=>"No table selected"]);
+			return false;
+		}
+
+		$data = $this->read();
+
+		if(!isset($data->DATA))
+			return (int) 0;
+
+		if(empty($conditions) && empty($options))
+			return count($data->DATA);
+		else
+			return count($this->fetch($conditions, $options));
 	}
 
 }
