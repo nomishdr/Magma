@@ -1,0 +1,7 @@
+{
+    "name": "Inxk/Magma",
+    "description": "PHP Based database",
+    "require": {
+        "php": "^5.6 || ^7.0"
+    }
+}
