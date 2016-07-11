@@ -4,7 +4,7 @@
 			<title>Magma Demo</title>
 
 	</head>
-<body>
+<body style="font-family:Helvetica, arial;">
 <?php
 require '../class.magma.php';
 
@@ -25,11 +25,17 @@ $Magma->insert(
     //...
 );
 $result = $Magma->fetch(); //Fetch with no conditions
+	echo("<h3>fetch() (fetch with no conditions) :</h3>");
 	print_r($result);
+	echo("<br />");
 $result = $Magma->fetch(["firstname"=>"Firstname1"]); //Find every firstname equal to "Firstname1"
+	echo('<h3>fetch(["firstname"=>"Firstname1"])</h3>');
 	print_r($result);
+	echo("<br />");
 $result = $Magma->fetch(["firstname"=>"Firstname1"], ["LIMIT"=>1]); //Find the first first name equal to "Firstname1"
+	echo('<h3>fetch(["firstname"=>"Firstname1"], ["LIMIT"=>1])</h3>');
 	print_r($result);
+	echo("<br />");
 
 $Magma->update(["firstname"=>"New firstname ! :D"], ["id"=>3]); //Find id=3 and replace its firstname with the associate value
 
